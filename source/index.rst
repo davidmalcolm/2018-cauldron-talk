@@ -52,26 +52,6 @@ https://dmalcolm.fedorapeople.org/presentations/cauldron-2018/
 .. When and where:
      Saturday, September 8, 15:30-16:30 Great Hall
 
-.. TODO: objectives for the talk?
-
-
-
-.. Better capturing of the existing dumps
-
-.. Better dump messages
-
-   opt_problem
-
-     if nothing else, better locations for the "failure" message
-
-   rich vectorization hints
-
-What this talk is about
-=======================
-
-.. FIXME
-
-
 Getting information from the optimizer
 ======================================
 
@@ -86,9 +66,33 @@ e.g.
 
 etc
 
-.. TODO: but what about profiling?
-   Need to figure out what's slow first
-   Disconnect between profiling and optimization dumps
+
+What this talk is about
+=======================
+
+* GCC's current solution for this
+
+* Problems with the current solution
+
+* Improvements I've made for GCC 9
+
+* Improvements I want to make
+
+* Other ideas
+
+
+Measure!
+========
+
+* Need to figure out what's slow first
+
+* But: we have a disconnect between profiling and our optimization dumps
+
+* Optimization dumps only talk about source file/line/column
+
+* What if a function gets inlined in many different places?
+
+* What about templates that are instantiated many times?
 
 
 How does the user get *actionable* information?
@@ -97,6 +101,8 @@ How does the user get *actionable* information?
 * "How do I make my code faster?"
 
   * "What stopped the loop getting vectorized?"
+
+    * "Can I tweak it?"
 
 * "Is there some option I can turn on that's likely to help?"
 
@@ -130,6 +136,10 @@ GCC <= 8:
 * ``-fopt-info``
 
   * e.g. ``-fopt-info-all``, ``-fopt-info-vec-missed``
+
+  * can see multiple passes at once
+
+  * granularity is still per-TU
 
 Example
 =======
@@ -449,7 +459,10 @@ gcc 8, with ``-fopt-info-all``, at ``-O3``
 
 The pertinent information was two slides ago.
 
-It's easier to see with ``-fopt-info-optimized-missed``:
+.. nextslide::
+   :increment:
+
+It's easier to see with ``-fopt-info-missed``:
 
 .. code-block:: none
 
@@ -532,45 +545,6 @@ Two kinds of improvement
 * Better messages
 
 
-Our optimization dumping APIs
-=============================
-
-.. dump_*
-
-.. and some use of fprintf
-
-.. TODO: the problem with using "vect_location" for everything
-
-
-Comparison with clang
-=====================
-
-TODO
-
-clang::
-
-  -fsave-optimization-record -foptimization-record-file=foo.yaml
-
-(perhaps with a compatible format?  they have viewers)
-
-
-We don't want a parallel API
-============================
-
-We don't want to repeat ourselves when dumping e.g.:
-
-.. code-block:: c++
-
-  if (dump_file && (dump_flags & TDF_DETAILS))
-    {
-      fprintf (dump_file,
-               "can't frobnicate this stmt:\n");
-      print_gimple_stmt (dump_file, stmt, 0, 0);
-    }
-  remark (loop_stmt, OPT_remark_foo,
-          "can't frobnicate this stmt");
-
-
 What I've done so far for GCC 9
 ===============================
 
@@ -585,6 +559,8 @@ What I've done so far for GCC 9
 
 Example of JSON output
 ======================
+
+A tuple.
 
 First, some metadata:
 
@@ -730,7 +706,7 @@ dump_location_t
 ===============
 
 The dump API now takes a ``dump_location_t``, rather than a
-``source_location``.
+``source_location`` (aka ``location_t``).
 
 ``dump_location_t``
 
@@ -900,8 +876,49 @@ new format code?
 		     STMT_VINFO_DR_STEP_ALIGNMENT (stmt_info));
 
 
-TODO: AUTO_DUMP_SCOPE etc
-=========================
+``AUTO_DUMP_SCOPE`` and ``DUMP_VECT_SCOPE``
+===========================================
+
+Replace all the:
+
+.. code-block:: c++
+
+   if (dump_enabled_p ())
+     dump_printf_loc (MSG_NOTE, vect_location,
+                      "=== vect_analyze_data_ref_accesses ===\n");
+
+with just:
+
+.. code-block:: c++
+
+   DUMP_VECT_SCOPE ("vect_analyze_data_ref_accesses");
+
+This captures that this ``note`` is expressing a frame somewhere on the
+call stack during the optimization.
+
+.. nextslide::
+   :increment:
+
+Textual output now indents them:
+
+.. code-block:: none
+
+  demo.cc:7:24: note: === analyze_loop_nest ===
+  demo.cc:7:24: note:  === vect_analyze_loop_form ===
+  demo.cc:7:24: note:   === get_loop_niters ===
+  demo.cc:7:24: note:  Symbolic number of iterations is (((((unsigned lo
+  ng) _10 - (unsigned long) _9) - 24) /[ex] 8) * 768614336404564651 & 23
+  05843009213693951) + 1
+
+
+The JSON output nests all of these (and the notes within them), expressing
+the hierarchy.
+
+
+Future work
+===========
+
+We have about 2 months left for feature-development on GCC 9
 
 
 What *should* the user experience be?
@@ -913,12 +930,12 @@ What *should* the user experience be?
 
 * what output do they see?
 
-(we have 2 more months of feature-development time for GCC 9)
-
 .. nextslide::
    :increment:
 
 What's important to the user?
+
+Presumably:
 
 * which loop?
 
@@ -945,10 +962,15 @@ UX Ideas - input
 * Things the user can't filter on yet:
 
   * just a particular function or range of source code
-    (e.g. via a ``#pragma`` ?)
+    (e.g. via a ``#pragma`` ?  via an attribute?)
 
   * based on hotness ("only tell me about code with a profile count above
     $THRESHOLD")
+
+Current output
+==============
+
+(recall the two pages of "note" lines emitted at the loop's location)
 
 
 UX Ideas - output
@@ -961,7 +983,33 @@ UX Ideas - output
     <LOOP-LOCATION>: couldn't vectorize this loop
     <PROBLEM-LOCATION>: because of <REASON>
 
-* put it through the diagnostic subsystem
+.. nextslide::
+   :increment:
+
+* Use other prefixes than just "note" for everything
+
+  * "missed-optimization" vs "optimization" ?
+
+Rather than:
+
+.. code-block:: none
+
+     demo.cc:7:24: note: couldn't vectorize loop
+     stl_vector.h:870:50: note: the reason
+
+Maybe:
+
+.. code-block:: none
+
+     demo.cc:7:24: missed-optimization: couldn't vectorize loop
+     stl_vector.h:870:50: note: the reason
+
+(may require some DejaGnu tweaks)
+
+.. nextslide::
+   :increment:
+
+* put the messages through the diagnostic subsystem
 
   * show source code
 
@@ -980,18 +1028,18 @@ UX Ideas - output
 
   demo.cc: In function ‘std::size_t f(const std::vector<std::vector<floa
   t> >&)’:
-  demo.cc:7:24: remark: couldn't vectorize loop
+  demo.cc:7:24: missed-optimization: couldn't vectorize loop due to...
   7 |   for (auto const & w: v)
     |                        ^
-  demo.cc:4:1: note:   not vectorized: relevant stmt not supported: patt
-  _25 = _14 < 0 ? 3 : 0;
-  ../x86_64-pc-linux-gnu/libstdc++-v3/include/bits/stl_vector.h:870:50:
-  note:   not vectorized: relevant stmt not supported: _15 = _14 /[ex] 4;
   In file included from ../x86_64-pc-linux-gnu/libstdc++-v3/include/vect
   or:64,
                    from demo.cc:1:
+  In function ‘std::vector<_Tp, _Alloc>::size_type std::vector<_Tp, _All
+  oc>::size() const [with _Tp = float; _Alloc = std::allocator<float>]’,
+      inlined from ‘std::size_t f(const std::vector<std::vector<float> >&)’
+      at demo.cc:8:18:
   ../x86_64-pc-linux-gnu/libstdc++-v3/include/bits/stl_vector.h:870:50:
-  remark:    [pass=vect] [count(guessed_local)=955630224]
+  note:   not vectorized: relevant stmt not supported: _15 = _14 /[ex] 4;
   870 |       { return size_type(this->_M_impl._M_finish - this->_M_impl._M_start); }
       |                          ~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -1020,19 +1068,25 @@ Idea for implementing the above:
 
 Implementation ideas:
 
-* explicitly mark the dump calls, adding a new flag to the ``dump_*``
-  API e.g. MSG_DETAILS, or MSG_PRIORITY?
+* explicitly mark the dump calls, adding a new flag(s) to the ``dump_*``
+  API?
 
-  * ugh (lots of churn)
+  * e.g. add ``MSG_DETAILS`` and add to *lots* of ``dump_`` calls
 
-* treat the messages that are in nested scopes as being "details", and
-  filter them out implicitly
+    * ugh (lots of churn)
 
-  * minimal patching required
+  * e.g. add ``MSG_PRIORITY`` and add to a few ``dump_`` calls
+
+* implicit: treat the messages that are in nested scopes as being "details",
+  and filter them out implicitly
+
+  * or add an ``auto_hide_dump_messages`` class, or somesuch
+
+  * minimal patching required, some "magic"
 
 
-``opt_problem``
-===============
+``opt_result`` and ``opt_problem``
+==================================
 
 * a way to "bubble up" information about an optimization problem
   from deep in the call stack up to the top of a pass
@@ -1088,15 +1142,77 @@ we (optionally) capture the cause of the failure via:
 
 .. code-block:: c++
 
-     return opt_result::failure_at (stmt, "foo is unsupported");
-     // if !dump_enabled_p, almost the same as:
-     return false;
+   return opt_result::success ();
 
-     return opt_result::success ();
-     // effectively the same as:
+is effectively the same as:
+
+.. code-block:: c++
+
      return true;
 
-Fixing all those problem locations naturally falls out of this.
+but documents our intentions.
+
+.. nextslide::
+   :increment:
+
+.. code-block:: c++
+
+   return opt_result::failure_at (stmt, "foo is unsupported");
+
+when ``!dump_enabled_p``, this is almost the same as:
+
+.. code-block:: c++
+
+   return false;
+
+Fixing all those "problem locations" naturally fall
+out of fixing the type issues needed to get it to compile
+
+.. nextslide::
+   :increment:
+
+e.g. the specific failure case from our example was:
+
+.. code-block:: c++
+
+   if (!ok)
+    {
+      if (dump_enabled_p ())
+        {
+          dump_printf_loc (MSG_MISSED_OPTIMIZATION, vect_location,
+                           "not vectorized: relevant stmt not ");
+          dump_printf (MSG_MISSED_OPTIMIZATION, "supported: ");
+          dump_gimple_stmt (MSG_MISSED_OPTIMIZATION, TDF_SLIM,
+                            stmt_info->stmt, 0);
+        }
+      return false;
+    }
+
+(note the use of ``vect_location``)
+
+.. nextslide::
+   :increment:
+
+and this becomes:
+
+.. code-block:: c++
+
+   if (!ok)
+     return opt_result::failure_at (stmt_info->stmt,
+                                    "not vectorized:"
+                                    " relevant stmt not supported: %G",
+                                    stmt_info->stmt);
+
+(note the use of ``stmt_info->stmt``)
+
+.. nextslide::
+   :increment:
+
+Status: am working on this; I hope to get it into gcc 9.
+
+* fixes a lot of the issues discussed so far
+
+* TODO: figure out that "details" vs "non-details" issue
 
 
 "Why wasn't a pass run?"
@@ -1112,14 +1228,14 @@ Non-trivial interaction of:
 
   * command-line options
 
-  * ``gate`` vfuncs, and
+  * ``opt_pass::gate`` virtual functions, and
 
   * the ``default_options_table`` (in ``opts.c``)
 
 .. nextslide::
    :increment:
 
-Idea:
+Idea/RFC:
 
 * convert ``opt_pass::gate`` to return an ``opt_result`` rather than
   just a ``bool``
@@ -1135,13 +1251,15 @@ This would allow us to emit e.g.:
   note: pass is enabled via '-ftree-loop-vectorize', or at '-O3'
   and above
 
-(maybe as part of ``-fopt-info-vec-missed``)
+(maybe as part of ``-fopt-info-vec-missed`` ?)
 
 
-Rich vectorization hints
-========================
+UX idea: Rich vectorization hints
+=================================
 
-Focusing on "actionable" reports to end-user.
+Work-in-progress/prototype.
+
+A much more verbose idea: "actionable" reports for the end-user.
 
 * Rich optimization hints can contain a mixture of:
 
@@ -1157,17 +1275,16 @@ Focusing on "actionable" reports to end-user.
 
 .. nextslide::
    :increment:
-   
-* can be printed to stderr, or saved as part of the
-  JSON optimization
+
+* can be printed to stderr (diagrams become ASCII art)
+
+* can be saved as part of the JSON optimization record
 
   * can be prioritized by code hotness
 
   * browsed in an IDE, etc
 
-etc.  The diagrams are printed as ASCII art when printed to stderr, or
-serialized in a form from which HTML/SVG can be generated (this last
-part is a work-in-progress).
+  * diagrams become HTML/SVG?
 
 .. nextslide::
    :increment:
@@ -1304,38 +1421,35 @@ part is a work-in-progress).
 
 .. nextslide::
    :increment:
- 
-Known limitations:
 
-* lots of hacks: not all of the above is using real data (I'm currently
-  generating this in try_vectorize_loop_1 after the loop_vinfo has been
-  populated, but before the call to vect_transform_loop; it might make
-  more sense to build it after vect_transform_loop, optionally capturing
-  pertinent extra data if rich hints are enabled).
-  
-* no i18n yet
-  
-* diagrams don't yet support non-ASCII text
-  
-* various FIXMEs identified in the code
-  
-* this only covers the "loop vectorization succeeded" case (and only a
-  subset of that).  It would be good to be able to emit rich hints
-  describing the problem to the user when loop vectorization fails on a
-  hot loop.  The "opt_problem" work I've posted elsewhere might be useful
-  for that.
+Status:
+
+* a hackish prototype
+
+* lots of work remains; perhaps too much to get done for gcc 9
 
 
 Summary
 =======
 
-.. FIXME
+* state of optimization dumps in gcc 8
 
+* changes so far in gcc 9
 
-Next steps
-==========
+  ``-fsave-optimization-record``
 
-.. FIXME
+* proposed changes for gcc 9
+
+  * filtering vectorization messages to just the most important, by default
+
+  * showing better locations for problematic constructs
+
+  * using the diagnostics subsystem?
+
+  * show why a pass wasn't run?
+
+* rich vectorization hints??
+
 
 Questions and Discussion
 ========================
@@ -1346,66 +1460,4 @@ Thanks for listening!
 
 URL for these slides: https://dmalcolm.fedorapeople.org/presentations/cauldron-2018/
 
-
-TODO: Material under construction
-=================================
-
-.. TODO:
-   What have I committed so far:
-
-   "[PATCH 00/10] RFC: Prototype of compiler-assisted performance analysis"
-   https://www.phoronix.com/scan.php?page=news_item&px=GCC-Comp-Assist-Perf-Analysis
-   “[PATCH 0/8] v2 of optimization records patch kit"
-   r261325: "Convert dump and optgroup flags to enums"
-   r261710: "Introduce DUMP_VECT_SCOPE macro"
-   "[PATCH] v3 of optinfo, remarks and optimization records"
-   "[PATCH] [RFC] Higher-level reporting of vectorization problems"
-   r262149: "Introduce dump_location_t"
-   r262220: “Hide alt_dump_file within dumpfile.c"
-   r262246: "-fopt-info: add indentation via DUMP_VECT_SCOPE"
-   r262295: "Reinstate dump_generic_expr_loc"
-   r262317: "selftest: introduce class auto_fix_quotes"
-   "[PATCH 0/2] v4: optinfo framework and remarks"
-   r262346: “Remove "note: " prefix from some scan-tree-dump directives"
-   "[PATCH 0/5] [RFC v2] Higher-level reporting of vectorization problems"
-   r262891: “Add "optinfo" framework" (v5)
-   r262905: “Add "-fsave-optimization-record""
-   "[PATCH] -fsave-optimization-record: add contrib/optrecord.py"
-   r262950: “Fix segfault in -fsave-optimization-record (PR tree-optimization/86636)"
-   r262967: "optinfo-emit-json.cc: fix trivial memory leak"
-   "[PATCH] RFC: Prototype of "rich vectorization hints" idea"
-   r263031: “Fixes to testcase for PR tree-optimization/86636"
-   "[PATCH 0/5] dump_printf support for middle-end types"
-   r263046: "C++: clean up cp_printer"
-   r263167: "Simplify dump_context by adding a dump_loc member function"
-   r263178: "dumpfile.c: eliminate special-casing of dump_file/alt_dump_file"
-   r263181: "c-family: clean up the data tables in c-format.c"
-   r263244: "dumpfile.c/h: add "const" to dump location ctors"
-   r263626: "Formatted printing for dump_* in the middle-end"
-      
-.. TODO:
-   What's left
-
-.. What does it look like on SPEC?
-
-
-How do advanced users ask for more information on what GCC's optimizers
-are doing?
-
-Current user experience
-
-Some kind of profiling of the workload
-Find the hotspots in the code
-Scour over the machine code and the dumps
-
-Clang experience
-
-I guess I'm assuming PGO
-
-Existing dump API.
-
-The formatted version of the API
-
-What does clang do?
-
-* I get no output with ``-Rpass-analysis=loop-vectorize``
+Source code for these slides: https://github.com/davidmalcolm/2018-cauldron-talk
