@@ -501,7 +501,8 @@ i.e.:
   demo.cc:7:24: note: not vectorized: relevant stmt not supported:
   _15 = _14 /[ex] 4;
 
-So we know that the failure is due to a (then) unsupported tree code.
+So we know that the failure is due to a (then) unsupported tree code
+(fixed 2018-07-18 as of r262854).
 
 But that doesn't tell us the location of the problematic statement:
 
@@ -898,16 +899,243 @@ new format code?
 		     STMT_VINFO_DR_OFFSET_ALIGNMENT (stmt_info),
 		     STMT_VINFO_DR_STEP_ALIGNMENT (stmt_info));
 
-Further ideas for GCC 9
-=======================
 
-* opt_problem
-
-* rich vectorization hints
+TODO: AUTO_DUMP_SCOPE etc
+=========================
 
 
-opt_problem
-===========
+What *should* the user experience be?
+=====================================
+
+"GCC can't vectorize <LOOP> because of <STMT>"
+
+* what command-line options does the user provide?
+
+* what output do they see?
+
+(we have 2 more months of feature-development time for GCC 9)
+
+.. nextslide::
+   :increment:
+
+What's important to the user?
+
+* which loop?
+
+* which statement, exactly, is stopping vectorization?
+
+
+UX Ideas - input
+================
+
+* Currently the user can filter on:
+
+  * what kind of pass ("ipa", "loop", "inline", "omp", "vec", plus "optall")
+
+    e.g. ``-fopt-info-vec`` or somesuch ("tell me about vectorization")
+
+  * what kind of message ("optimized", "missed", "note", "all")
+
+* Or look at everything in one pass (for every function in the TU)
+  e.g. ``-fdump-tree-vect``
+
+.. nextslide::
+   :increment:
+
+* Things the user can't filter on yet:
+
+  * just a particular function or range of source code
+    (e.g. via a ``#pragma`` ?)
+
+  * based on hotness ("only tell me about code with a profile count above
+    $THRESHOLD")
+
+
+UX Ideas - output
+=================
+
+* How about
+
+  .. code-block:: none
+
+    <LOOP-LOCATION>: couldn't vectorize this loop
+    <PROBLEM-LOCATION>: because of <REASON>
+
+* put it through the diagnostic subsystem
+
+  * show source code
+
+  * show inlining chain / inclusion chain etc
+
+  * maybe show metadata:
+
+    * "which pass?"
+
+    * hotness
+
+.. nextslide::
+   :increment:
+
+.. code-block:: none
+
+  demo.cc: In function ‘std::size_t f(const std::vector<std::vector<floa
+  t> >&)’:
+  demo.cc:7:24: remark: couldn't vectorize loop
+  7 |   for (auto const & w: v)
+    |                        ^
+  demo.cc:4:1: note:   not vectorized: relevant stmt not supported: patt
+  _25 = _14 < 0 ? 3 : 0;
+  ../x86_64-pc-linux-gnu/libstdc++-v3/include/bits/stl_vector.h:870:50:
+  note:   not vectorized: relevant stmt not supported: _15 = _14 /[ex] 4;
+  In file included from ../x86_64-pc-linux-gnu/libstdc++-v3/include/vect
+  or:64,
+                   from demo.cc:1:
+  ../x86_64-pc-linux-gnu/libstdc++-v3/include/bits/stl_vector.h:870:50:
+  remark:    [pass=vect] [count(guessed_local)=955630224]
+  870 |       { return size_type(this->_M_impl._M_finish - this->_M_impl._M_start); }
+      |                          ~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~
+
+.. nextslide::
+   :increment:
+
+Idea for implementing the above:
+
+* provide a way to filter out *most* of the output
+
+  * everything apart from:
+
+    * <LOOP-LOCATION>: "couldn't vectorize loop"
+
+    * <REASON-LOCATION: "$REASON"
+
+  * everything else counts as "details"
+
+  * maybe filter out "details" by default, so that users by default get
+    readable output
+
+    * GCC developers (and DejaGnu tests) can opt-in to get the full details
+
+.. nextslide::
+   :increment:
+
+Implementation ideas:
+
+* explicitly mark the dump calls, adding a new flag to the ``dump_*``
+  API e.g. MSG_DETAILS, or MSG_PRIORITY?
+
+  * ugh (lots of churn)
+
+* treat the messages that are in nested scopes as being "details", and
+  filter them out implicitly
+
+  * minimal patching required
+
+
+``opt_problem``
+===============
+
+* a way to "bubble up" information about an optimization problem
+  from deep in the call stack up to the top of a pass
+
+* a special wrapper around `bool`
+
+  * identifies the places that need failure-handling via the C++
+    type system
+
+    * both to the compiler, and to human readers
+
+  * if ``dump_enabled_p``, has a "reason" string as well as the `false`
+    `bool` - "why did it fail?"
+
+.. nextslide::
+   :increment:
+
+Rather than:
+
+.. code-block:: c++
+
+     if (!check_something ())
+       {
+         if (dump_enabled_p ())
+           dump_printf_loc (MSG_MISSED_OPTIMIZATION, vect_location,
+                            "foo is unsupported.\n");
+         return false;
+       }
+     [...lots more checks...]
+
+     // All checks passed:
+     return true;
+
+.. nextslide::
+   :increment:
+
+we (optionally) capture the cause of the failure via:
+
+.. code-block:: c++
+
+     if (!check_something ())
+       return opt_result::failure_at (stmt, "foo is unsupported");
+
+     [...lots more checks...]
+
+     // All checks passed:
+     return opt_result::success ();
+
+(this motivated the ATTRIBUTE_GCC_DUMP_PRINTF change above)
+
+.. nextslide::
+   :increment:
+
+.. code-block:: c++
+
+     return opt_result::failure_at (stmt, "foo is unsupported");
+     // if !dump_enabled_p, almost the same as:
+     return false;
+
+     return opt_result::success ();
+     // effectively the same as:
+     return true;
+
+Fixing all those problem locations naturally falls out of this.
+
+
+"Why wasn't a pass run?"
+========================
+
+* "Was $PASS run?  Why not?"
+
+* "Does $PASS get run at ``-O2``?"
+
+End-users seem to have a lot of difficulty with this.
+
+Non-trivial interaction of:
+
+  * command-line options
+
+  * ``gate`` vfuncs, and
+
+  * the ``default_options_table`` (in ``opts.c``)
+
+.. nextslide::
+   :increment:
+
+Idea:
+
+* convert ``opt_pass::gate`` to return an ``opt_result`` rather than
+  just a ``bool``
+
+* hence, when dumping is enabled, we can tell the user
+  *why* a pass wasn't run on a given function.
+
+This would allow us to emit e.g.:
+
+.. code-block:: none
+
+  note: optimization pass 'vect' disabled for function 'foo'
+  note: pass is enabled via '-ftree-loop-vectorize', or at '-O3'
+  and above
+
+(maybe as part of ``-fopt-info-vec-missed``)
 
 
 Rich vectorization hints
@@ -1177,3 +1405,7 @@ I guess I'm assuming PGO
 Existing dump API.
 
 The formatted version of the API
+
+What does clang do?
+
+* I get no output with ``-Rpass-analysis=loop-vectorize``
