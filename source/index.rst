@@ -19,20 +19,6 @@
 
    "make slides" then works
 
-====================
-Optimization records
-====================
-
-Showing the user what GCC's optimization passes are doing
-
-.. TODO: ^^^ make this a subheading of the title or whatnot
-
-GNU Tools Cauldron 2018
-
-David Malcolm <dmalcolm@redhat.com>
-
-https://dmalcolm.fedorapeople.org/presentations/cauldron-2018/
-
 .. Abstract:
 
    How does an advanced end-user figure out what GCC's optimization passes
@@ -51,6 +37,11 @@ https://dmalcolm.fedorapeople.org/presentations/cauldron-2018/
 
 .. When and where:
      Saturday, September 8, 15:30-16:30 Great Hall
+
+====================
+Optimization records
+====================
+
 
 Getting information from the optimizer
 ======================================
@@ -906,9 +897,8 @@ Textual output now indents them:
   demo.cc:7:24: note: === analyze_loop_nest ===
   demo.cc:7:24: note:  === vect_analyze_loop_form ===
   demo.cc:7:24: note:   === get_loop_niters ===
-  demo.cc:7:24: note:  Symbolic number of iterations is (((((unsigned lo
-  ng) _10 - (unsigned long) _9) - 24) /[ex] 8) * 768614336404564651 & 23
-  05843009213693951) + 1
+  demo.cc:7:24: note:  Symbolic number of iterations is (((((unsigned long) _10 - (unsigned
+  long) _9) - 24) /[ex] 8) * 768614336404564651 & 2305843009213693951) + 1
 
 
 The JSON output nests all of these (and the notes within them), expressing
@@ -1026,16 +1016,14 @@ Maybe:
 
 .. code-block:: none
 
-  demo.cc: In function ‘std::size_t f(const std::vector<std::vector<floa
-  t> >&)’:
+  demo.cc: In function ‘std::size_t f(const std::vector<std::vector<float> >&)’:
   demo.cc:7:24: missed-optimization: couldn't vectorize loop due to...
   7 |   for (auto const & w: v)
     |                        ^
-  In file included from ../x86_64-pc-linux-gnu/libstdc++-v3/include/vect
-  or:64,
+  In file included from ../x86_64-pc-linux-gnu/libstdc++-v3/include/vector:64,
                    from demo.cc:1:
-  In function ‘std::vector<_Tp, _Alloc>::size_type std::vector<_Tp, _All
-  oc>::size() const [with _Tp = float; _Alloc = std::allocator<float>]’,
+  In function ‘std::vector<_Tp, _Alloc>::size_type std::vector<_Tp, _Alloc>::size() const
+  [with _Tp = float; _Alloc = std::allocator<float>]’,
       inlined from ‘std::size_t f(const std::vector<std::vector<float> >&)’
       at demo.cc:8:18:
   ../x86_64-pc-linux-gnu/libstdc++-v3/include/bits/stl_vector.h:870:50:
@@ -1248,8 +1236,7 @@ This would allow us to emit e.g.:
 .. code-block:: none
 
   note: optimization pass 'vect' disabled for function 'foo'
-  note: pass is enabled via '-ftree-loop-vectorize', or at '-O3'
-  and above
+  note: pass is enabled via '-ftree-loop-vectorize', or at '-O3' and above
 
 (maybe as part of ``-fopt-info-vec-missed`` ?)
 
