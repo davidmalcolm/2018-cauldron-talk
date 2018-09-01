@@ -464,10 +464,8 @@ It's easier to see with ``-fopt-info-missed``:
   demo.cc:7:24: note: not ssa-name.
   demo.cc:7:24: note: use not simple.
   demo.cc:7:24: note: no array mode for V2DI[3]
-  demo.cc:7:24: note: Data access with gaps requires scalar epilogue lo
-  op
-  demo.cc:7:24: note: can't use a fully-masked loop because the target
-  doesn't have the appropriate masked load or store.
+  demo.cc:7:24: note: Data access with gaps requires scalar epilogue loop
+  demo.cc:7:24: note: can't use a fully-masked loop because the target doesn't have the appropriate masked load or store.
   demo.cc:7:24: note: not ssa-name.
   demo.cc:7:24: note: use not simple.
   demo.cc:7:24: note: not ssa-name.
@@ -479,16 +477,13 @@ It's easier to see with ``-fopt-info-missed``:
 .. code-block:: none
 
   demo.cc:7:24: note: no array mode for V2DI[3]
-  demo.cc:7:24: note: Data access with gaps requires scalar epilogue lo
-  op
+  demo.cc:7:24: note: Data access with gaps requires scalar epilogue loop
   demo.cc:7:24: note: op not supported by target.
-  demo.cc:7:24: note: not vectorized: relevant stmt not supported:  _15
-  = _14 /[ex] 4;
+  demo.cc:7:24: note: not vectorized: relevant stmt not supported:  _15 = _14 /[ex] 4;
   demo.cc:7:24: note: bad operation or unsupported loop bound.
   demo.cc:7:24: note: not vectorized: no grouped stores in basic block.
   demo.cc:7:24: note: not vectorized: no grouped stores in basic block.
-  demo.cc:9:10: note: not vectorized: not enough data-refs in basic blo
-  ck.
+  demo.cc:9:10: note: not vectorized: not enough data-refs in basic block.
 
 i.e.:
 
