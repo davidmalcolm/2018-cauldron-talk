@@ -19,6 +19,8 @@
 
    "make slides" then works
 
+   See: http://docs.hieroglyph.io/en/latest/
+
 .. Abstract:
 
    How does an advanced end-user figure out what GCC's optimization passes
