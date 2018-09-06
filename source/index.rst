@@ -670,6 +670,8 @@ Similarly, an IDE could make use of this in other ways.
 Example of HTML report from the JSON output
 ===========================================
 
+https://dmalcolm.fedorapeople.org/gcc/2018-05-16/preso-example-inlined/
+
 Dump API changes
 ================
 
