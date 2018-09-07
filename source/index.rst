@@ -1222,7 +1222,19 @@ Non-trivial interaction of:
 .. nextslide::
    :increment:
 
-Idea/RFC:
+Idea: can we tell the user e.g.:
+
+.. code-block:: none
+
+  note: optimization pass 'vect' was skipped for function 'foo'
+  note: 'vect' pass is enabled via '-ftree-loop-vectorize', or at '-O3' and above
+
+(maybe as part of ``-fopt-info-vec-missed`` ?)
+
+.. nextslide::
+   :increment:
+
+Possible implementation idea (not prototyped yet):
 
 * convert ``opt_pass::gate`` to return an ``opt_result`` rather than
   just a ``bool``
@@ -1230,14 +1242,6 @@ Idea/RFC:
 * hence, when dumping is enabled, we can tell the user
   *why* a pass wasn't run on a given function.
 
-This would allow us to emit e.g.:
-
-.. code-block:: none
-
-  note: optimization pass 'vect' disabled for function 'foo'
-  note: pass is enabled via '-ftree-loop-vectorize', or at '-O3' and above
-
-(maybe as part of ``-fopt-info-vec-missed`` ?)
 
 
 UX idea: Rich vectorization hints
