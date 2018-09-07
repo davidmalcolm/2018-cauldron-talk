@@ -491,29 +491,27 @@ i.e.:
 
 .. code-block:: none
 
-  demo.cc:7:24: note: not vectorized: relevant stmt not supported:
-  _15 = _14 /[ex] 4;
+  demo.cc:7:24: note: not vectorized: relevant stmt not supported:  _15 = _14 /[ex] 4;
 
 .. nextslide::
    :increment:
 
 .. code-block:: none
 
-  demo.cc:7:24: note: not vectorized: relevant stmt not supported:
-  _15 = _14 /[ex] 4;
+  demo.cc:7:24: note: not vectorized: relevant stmt not supported:  _15 = _14 /[ex] 4;
 
-So we know that the failure is due to a (then) unsupported tree code
-(fixed 2018-07-18 as of r262854).
+* So we know that the failure is due to a (then) unsupported tree code
+  (fixed 2018-07-18 as of r262854).
 
-But that doesn't tell us the location of the problematic statement:
+* But that doesn't tell us the location of the problematic statement.
 
-It's using the location of the loop for (almost) everything:
+* It's using the location of the loop for (almost) everything:
 
-.. code-block:: none
+  .. code-block:: none
 
-  demo.cc:7:24:
-    for (auto const & w: v)
-                          ^
+    demo.cc:7:24:
+      for (auto const & w: v)
+                            ^
 
 
 Other problems
@@ -671,6 +669,19 @@ Example of HTML report from the JSON output
 ===========================================
 
 https://dmalcolm.fedorapeople.org/gcc/2018-05-16/preso-example-inlined/
+
+
+Status of JSON output
+=====================
+
+* it's in trunk, and works, mostly...
+
+  * some bugs (interaction with inliner tracking, LTO support)
+
+  * not much automated test coverage
+
+  * not yet "tested in anger"
+
 
 Dump API changes
 ================
@@ -931,8 +942,8 @@ Presumably:
 * which statement, exactly, is stopping vectorization?
 
 
-UX Ideas - input
-================
+Current UX - filtering
+======================
 
 * Currently the user can filter on:
 
@@ -945,8 +956,8 @@ UX Ideas - input
 * Or look at everything in one pass (for every function in the TU)
   e.g. ``-fdump-tree-vect``
 
-.. nextslide::
-   :increment:
+Future UX Ideas - filtering
+===========================
 
 * Things the user can't filter on yet:
 
@@ -956,14 +967,17 @@ UX Ideas - input
   * based on hotness ("only tell me about code with a profile count above
     $THRESHOLD")
 
-Current output
-==============
+* Interaction with JSON output?
+
+
+Current UX - output
+===================
 
 (recall the two pages of "note" lines emitted at the loop's location)
 
 
-UX Ideas - output
-=================
+Future UX Ideas - output
+========================
 
 * How about
 
